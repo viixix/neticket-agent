@@ -218,7 +218,7 @@ func (a *Agent) doQueueing(ctx context.Context) {
 // 선택 전 0.5~1.5s '망설임' 지연을 삽입하여 실제 유저 행동을 모사합니다.
 func (a *Agent) doSeatSelect(ctx context.Context) {
 	url := fmt.Sprintf("%s/reservations?session_id=%d&block_id=%d",
-		a.config.TicketURL, a.SessionID, a.BlockID)
+		a.config.BookingURL, a.SessionID, a.BlockID)
 
 	var resp getSeatsResp
 	statusCode, err := a.doJSON(ctx, http.MethodGet, url, nil, &resp)
@@ -293,7 +293,7 @@ func (a *Agent) doReserve(ctx context.Context) {
 	var result createReservationResp
 	statusCode, err := a.doJSON(ctx,
 		http.MethodPost,
-		a.config.TicketURL+"/reservations",
+		a.config.BookingURL+"/reservations",
 		bytes.NewReader(body),
 		&result,
 	)
@@ -335,7 +335,7 @@ func (a *Agent) doReserve(ctx context.Context) {
 func (a *Agent) doCaptcha(ctx context.Context) error {
 	// 1. 캡차 이미지 요청 → X-Captcha-Id 헤더 획득
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		a.config.TicketURL+"/captcha", nil)
+		a.config.BookingURL+"/captcha", nil)
 	if err != nil {
 		return err
 	}
@@ -357,7 +357,7 @@ func (a *Agent) doCaptcha(ctx context.Context) error {
 	guess := fmt.Sprintf("%06d", a.rng.Intn(1_000_000))
 	body, _ := json.Marshal(captchaVerifyReq{CaptchaID: captchaID, UserInput: guess})
 	_, _ = a.doJSON(ctx, http.MethodPost,
-		a.config.TicketURL+"/captcha/verify",
+		a.config.BookingURL+"/captcha/verify",
 		bytes.NewReader(body), nil)
 
 	return nil

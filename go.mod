@@ -1,3 +1,3 @@
-module github.com/viixix/beastcamp-agent
+module github.com/viixix/neticket-agent
 
 go 1.25.0

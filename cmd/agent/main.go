@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/viixix/beastcamp-agent/internal/agent"
-	"github.com/viixix/beastcamp-agent/pkg/util"
+	"github.com/viixix/neticket-agent/internal/agent"
+	"github.com/viixix/neticket-agent/pkg/util"
 )
 
 func main() {
@@ -187,8 +187,8 @@ func parseFlags() *agent.Config {
 
 	flag.StringVar(&cfg.QueueURL, "queue-url", cfg.QueueURL,
 		"대기열 서버 Base URL (예: http://localhost:3003/api)")
-	flag.StringVar(&cfg.TicketURL, "ticket-url", cfg.TicketURL,
-		"티켓 서버 Base URL (예: http://localhost:3001)")
+	flag.StringVar(&cfg.BookingURL, "booking-url", cfg.BookingURL,
+		"예약 서버 Base URL (예: http://localhost:3002/api)")
 	flag.IntVar(&cfg.SessionID, "session-id", cfg.SessionID,
 		"시뮬레이션 대상 회차 ID")
 	flag.IntVar(&cfg.BlockID, "block-id", cfg.BlockID,
@@ -200,7 +200,7 @@ func parseFlags() *agent.Config {
 	flag.IntVar(&cfg.LogEvery, "log-every", cfg.LogEvery,
 		"로그 샘플링 간격 (ID % N == 0인 에이전트만 상태 로그 출력, 1=전체)")
 	flag.StringVar(&cfg.APIURL, "api-url", cfg.APIURL,
-		"API 서버 Base URL (자동 발견 시 사용, 예: https://api.neticket.site/api)")
+		"API 서버 Base URL (자동 발견 시 사용, 예: https://show.neticket.site/api)")
 	flag.BoolVar(&cfg.AutoDiscover, "auto-discover", cfg.AutoDiscover,
 		"활성/예정 티켓팅 세션+블록을 API에서 자동 조회하여 에이전트마다 랜덤 배정")
 

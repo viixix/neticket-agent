@@ -3,11 +3,11 @@ package agent
 // Config는 에이전트 풀 전체가 공유하는 불변 설정입니다.
 // 각 에이전트는 포인터로 참조하므로 메모리를 한 번만 차지합니다.
 type Config struct {
-	// 대기열 서버 (queue-backend, 기본 포트 3003)
+	// 대기열 서버 (queue, 기본 포트 3003)
 	QueueURL string
 
-	// 티켓 서버 (ticket-server, 기본 포트 3001)
-	TicketURL string
+	// 예약 서버 (booking, 기본 포트 3002)
+	BookingURL string
 
 	// 시뮬레이션 대상 회차 ID
 	SessionID int
@@ -28,7 +28,7 @@ type Config struct {
 	// 소규모 테스트 시 1로 설정하면 전체 에이전트 로그를 볼 수 있습니다.
 	LogEvery int
 
-	// API 서버 Base URL (자동 발견 시 사용, api-server 포트 3002)
+	// API 서버 Base URL (자동 발견 시 사용, show 포트 3001)
 	APIURL string
 
 	// AutoDiscover: true면 APIURL에서 활성/예정 세션+블록을 자동 조회합니다.
@@ -37,17 +37,17 @@ type Config struct {
 }
 
 // DefaultConfig는 neticket.site 운영 환경을 기본값으로 반환합니다.
-// 로컬 테스트 시 --queue-url, --ticket-url, --api-url 플래그로 덮어쓸 수 있습니다.
+// 로컬 테스트 시 --queue-url, --booking-url, --api-url 플래그로 덮어쓸 수 있습니다.
 func DefaultConfig() *Config {
 	return &Config{
 		QueueURL:     "https://queue.neticket.site/api",
-		TicketURL:    "https://ticket.neticket.site",
+		BookingURL:    "https://booking.neticket.site/api",
 		SessionID:    0, // AutoDiscover=true 시 자동 설정됨
 		BlockID:      0, // AutoDiscover=true 시 자동 설정됨
 		SkipCaptcha:  true,
 		TotalAgents:  50000,
 		LogEvery:     1000,
-		APIURL:       "https://api.neticket.site/api",
+		APIURL:        "https://show.neticket.site/api",
 		AutoDiscover: true,
 	}
 }
