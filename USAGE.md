@@ -98,14 +98,18 @@ netsh int ipv6 set dynamicport tcp start=1025 num=64511
 
 ```bash
 # 1. 서버: loadtest conf로 교체 (X-Forwarded-For 기준 rate limit)
-docker cp queue/nginx.loadtest.conf <nginx_container>:/etc/nginx/nginx.conf
+#    nginx.conf가 bind mount된 경우 docker cp로 파일을 교체할 수 없으므로
+#    임시 경로로 복사 후 컨테이너 안에서 내용을 덮어쓴다.
+docker cp queue/nginx.loadtest.conf <nginx_container>:/etc/nginx/nginx.loadtest.conf
+docker exec <nginx_container> sh -c "cat /etc/nginx/nginx.loadtest.conf > /etc/nginx/nginx.conf"
 docker exec <nginx_container> nginx -s reload
 
 # 2. 에이전트 실행 (--spoof-ip로 에이전트별 랜덤 IP 헤더 전송)
 ./agent --agents <에이전트 수> --spoof-ip
 
 # 3. 테스트 후 운영 conf 복구
-docker cp queue/nginx.conf <nginx_container>:/etc/nginx/nginx.conf
+docker cp queue/nginx.conf <nginx_container>:/etc/nginx/nginx.conf.orig
+docker exec <nginx_container> sh -c "cat /etc/nginx/nginx.conf.orig > /etc/nginx/nginx.conf"
 docker exec <nginx_container> nginx -s reload
 ```
 
