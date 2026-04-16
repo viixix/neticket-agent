@@ -34,6 +34,11 @@ type Config struct {
 	// AutoDiscover: true면 APIURL에서 활성/예정 세션+블록을 자동 조회합니다.
 	// false면 SessionID/BlockID CLI 값을 전체 에이전트에 동일하게 사용합니다.
 	AutoDiscover bool
+
+	// SpoofIP: true면 각 에이전트가 고유한 랜덤 X-Forwarded-For 헤더를 전송합니다.
+	// 단일 머신에서 부하 테스트 시 per-IP rate limit 우회 목적으로 사용합니다.
+	// nginx에서 $http_x_forwarded_for를 rate limit 키로 사용해야 효과가 있습니다.
+	SpoofIP bool
 }
 
 // DefaultConfig는 neticket.site 운영 환경을 기본값으로 반환합니다.

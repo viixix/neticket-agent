@@ -203,6 +203,8 @@ func parseFlags() *agent.Config {
 		"API 서버 Base URL (자동 발견 시 사용, 예: https://show.neticket.site/api)")
 	flag.BoolVar(&cfg.AutoDiscover, "auto-discover", cfg.AutoDiscover,
 		"활성/예정 티켓팅 세션+블록을 API에서 자동 조회하여 에이전트마다 랜덤 배정")
+	flag.BoolVar(&cfg.SpoofIP, "spoof-ip", cfg.SpoofIP,
+		"각 에이전트에 랜덤 X-Forwarded-For 헤더 추가 (단일 머신 부하 테스트 시 per-IP rate limit 우회)")
 
 	flag.Parse()
 	return cfg

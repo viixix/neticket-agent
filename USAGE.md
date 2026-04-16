@@ -89,6 +89,28 @@ netsh int ipv4 set dynamicport tcp start=1025 num=64511
 netsh int ipv6 set dynamicport tcp start=1025 num=64511
 ```
 
+## 단일 머신 부하 테스트 (IP 스푸핑)
+
+단일 머신에서 테스트하면 모든 에이전트가 같은 출발지 IP를 공유하므로, nginx의 per-IP rate limit이 실제 운영 환경과 다르게 작동한다.  
+`--spoof-ip` 플래그와 `nginx.loadtest.conf`를 함께 사용하면 에이전트마다 다른 IP로 인식되어 실제 분산 트래픽 조건을 재현할 수 있다.
+
+### 절차
+
+```bash
+# 1. 서버: loadtest conf로 교체 (X-Forwarded-For 기준 rate limit)
+docker cp queue/nginx.loadtest.conf <nginx_container>:/etc/nginx/nginx.conf
+docker exec <nginx_container> nginx -s reload
+
+# 2. 에이전트 실행 (--spoof-ip로 에이전트별 랜덤 IP 헤더 전송)
+./agent --agents <에이전트 수> --spoof-ip
+
+# 3. 테스트 후 운영 conf 복구
+docker cp queue/nginx.conf <nginx_container>:/etc/nginx/nginx.conf
+docker exec <nginx_container> nginx -s reload
+```
+
+> `nginx.loadtest.conf`는 `neticket` 저장소의 `queue/nginx.loadtest.conf`에 위치한다.
+
 ## 종료
 
 `Ctrl+C` 또는 `SIGTERM` 수신 시 새 에이전트 생성을 중단하고 실행 중인 고루틴이 모두 완료될 때까지 대기한다.

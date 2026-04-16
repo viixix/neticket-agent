@@ -391,6 +391,9 @@ func (a *Agent) doJSON(
 	if a.activeToken != "" {
 		req.Header.Set("Authorization", "Bearer "+a.activeToken)
 	}
+	if a.config.SpoofIP {
+		req.Header.Set("X-Forwarded-For", a.spoofedIP)
+	}
 
 	resp, err := a.client.Do(req)
 	if err != nil {

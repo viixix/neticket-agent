@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"net/http"
@@ -94,6 +95,7 @@ type Agent struct {
 	activeToken     string    // 대기열 통과 후 발급된 JWT
 	conflictRetries int       // 이선좌(Conflict) 발생 시 재시도 횟수 (최대 3)
 	selectedSeat    seatCoord // doSeatSelect → doReserve 로 선택 좌석 전달
+	spoofedIP       string    // X-Forwarded-For 위조 IP (SpoofIP=true 시 사용)
 }
 
 // -----------------------------------------------------------------------
@@ -109,6 +111,15 @@ func NewAgent(id int, cfg *Config, client *http.Client, sb SessionBlock) *Agent 
 	// 전역 rand와 독립된 시드: 나노초 XOR ID로 고루틴 간 시드 중복 방지.
 	seed := time.Now().UnixNano() ^ int64(id)
 	rng := rand.New(rand.NewSource(seed)) //nolint:gosec // 보안 목적이 아닌 시뮬레이션용
+
+	// SpoofIP용 가상 IP: 에이전트 생성 시 1회 생성 후 고정.
+	// 1.0.0.0 ~ 223.255.255.254 범위 (예약 대역 제외하지 않으나 테스트 목적이므로 무관)
+	spoofedIP := fmt.Sprintf("%d.%d.%d.%d",
+		rng.Intn(223)+1,
+		rng.Intn(256),
+		rng.Intn(256),
+		rng.Intn(254)+1,
+	)
 
 	personality := pickPersonality(rng)
 	params := personalityTable[personality]
@@ -143,7 +154,8 @@ func NewAgent(id int, cfg *Config, client *http.Client, sb SessionBlock) *Agent 
 		JitterRange:       params.thinkStddevSecs,
 		StagnantThreshold: params.stagnantThreshold,
 
-		rng: rng,
+		rng:       rng,
+		spoofedIP: spoofedIP,
 	}
 }
 
