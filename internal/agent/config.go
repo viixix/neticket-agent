@@ -1,5 +1,7 @@
 package agent
 
+import "time"
+
 // Config는 에이전트 풀 전체가 공유하는 불변 설정입니다.
 // 각 에이전트는 포인터로 참조하므로 메모리를 한 번만 차지합니다.
 type Config struct {
@@ -39,6 +41,10 @@ type Config struct {
 	// 단일 머신에서 부하 테스트 시 per-IP rate limit 우회 목적으로 사용합니다.
 	// nginx에서 $http_x_forwarded_for를 rate limit 키로 사용해야 효과가 있습니다.
 	SpoofIP bool
+
+	// MaxDuration: 0이면 무제한. 양수이면 시작 후 해당 시간이 지나면 ctx를 취소해
+	// 모든 에이전트를 강제 종료합니다. 티켓팅 세션 윈도우를 넘지 않도록 제한할 때 사용합니다.
+	MaxDuration time.Duration
 }
 
 // DefaultConfig는 neticket.site 운영 환경을 기본값으로 반환합니다.

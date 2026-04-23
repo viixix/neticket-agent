@@ -58,9 +58,15 @@ func main() {
 	// ----------------------------------------------------------------
 	// 4. Graceful Shutdown 컨텍스트
 	//    SIGINT(Ctrl+C) / SIGTERM 수신 시 모든 고루틴에 ctx.Done() 전파
+	//    --max-duration > 0 이면 타이머 만료 시에도 ctx 취소
 	// ----------------------------------------------------------------
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if cfg.MaxDuration > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cfg.MaxDuration)
+		defer cancel()
+	}
 
 	// ----------------------------------------------------------------
 	// 5. 진행 상황 카운터 (원자적 — 고루틴 간 mutex 없이 집계)
@@ -205,6 +211,8 @@ func parseFlags() *agent.Config {
 		"활성/예정 티켓팅 세션+블록을 API에서 자동 조회하여 에이전트마다 랜덤 배정")
 	flag.BoolVar(&cfg.SpoofIP, "spoof-ip", cfg.SpoofIP,
 		"각 에이전트에 랜덤 X-Forwarded-For 헤더 추가 (단일 머신 부하 테스트 시 per-IP rate limit 우회)")
+	flag.DurationVar(&cfg.MaxDuration, "max-duration", cfg.MaxDuration,
+		"테스트 최대 실행 시간 (예: 2m30s). 0이면 무제한. 티켓팅 세션 윈도우 내에서 강제 종료할 때 사용.")
 
 	flag.Parse()
 	return cfg
