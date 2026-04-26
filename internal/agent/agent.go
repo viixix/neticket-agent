@@ -77,9 +77,11 @@ type Agent struct {
 	// NewAgent()에서 고유 시드로 초기화합니다.
 	rng *rand.Rand
 
-	// --- Maister: 대기열 심리학 PanicMode ---
-	// 순서가 StagnantThreshold 회 연속 줄지 않으면 PanicMode 돌입.
-	// PanicMode에서는 ThinkTime 대신 100~300ms 연타 간격을 사용합니다.
+	// --- 스트레스 가중 모드 (PanicMode) ---
+	// 실제 클라이언트는 고정 주기로 폴링하지만, 순번이 StagnantThreshold 회
+	// 연속 줄지 않으면 폴링 간격을 100~300ms로 단축해 부하를 가중시킨다.
+	// Maister의 대기 심리학(불안 시 이탈 증가)을 정확히 모델링한 것이 아니라,
+	// 실제보다 공격적인 상한선 시나리오를 재현하기 위한 의도적 스트레스 배수기다.
 	StagnantCount     int
 	StagnantThreshold int
 	PanicMode         bool
@@ -188,8 +190,8 @@ func (a *Agent) thinkTime() time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
-// panicThinkTime은 PanicMode(광클) 상태의 연타 간격을 반환합니다.
-// 100~300ms 균등분포: 실제 유저의 손가락 연타 속도를 모델링합니다.
+// panicThinkTime은 스트레스 가중 모드(PanicMode)의 폴링 간격을 반환합니다.
+// 100~300ms 균등분포로 폴링을 가속해 실제보다 공격적인 부하를 재현합니다.
 func (a *Agent) panicThinkTime() time.Duration {
 	ms := 100 + a.rng.Intn(200)
 	return time.Duration(ms) * time.Millisecond
