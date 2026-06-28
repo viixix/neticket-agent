@@ -13,34 +13,30 @@ import (
 // -----------------------------------------------------------------------
 
 type personalityParams struct {
-	patienceMin       time.Duration
-	patienceMax       time.Duration
-	pollIntervalSecs  float64 // 폴링 주기 μ (초) — 프론트엔드 refetchInterval 2s 기준
-	pollJitterSecs    float64 // 폴링 주기 σ (초)
-	stagnantThreshold int     // 이 횟수만큼 순서 변화 없으면 PanicMode
+	patienceMin      time.Duration
+	patienceMax      time.Duration
+	pollIntervalSecs float64 // 폴링 주기 μ (초) — 프론트엔드 refetchInterval 2s 기준
+	pollJitterSecs   float64 // 폴링 주기 σ (초)
 }
 
 var personalityTable = map[PersonalityType]personalityParams{
 	PersonalityHopeful: {
-		patienceMin:       3 * time.Minute,
-		patienceMax:       5 * time.Minute,
-		pollIntervalSecs:  2.0,
-		pollJitterSecs:    0.2,
-		stagnantThreshold: 3,
+		patienceMin:      3 * time.Minute,
+		patienceMax:      5 * time.Minute,
+		pollIntervalSecs: 2.0,
+		pollJitterSecs:   0.2,
 	},
 	PersonalityDoubtful: {
-		patienceMin:       2 * time.Minute,
-		patienceMax:       3 * time.Minute,
-		pollIntervalSecs:  2.0,
-		pollJitterSecs:    0.2,
-		stagnantThreshold: 3,
+		patienceMin:      2 * time.Minute,
+		patienceMax:      3 * time.Minute,
+		pollIntervalSecs: 2.0,
+		pollJitterSecs:   0.2,
 	},
 	PersonalityHopeless: {
-		patienceMin:       1 * time.Minute,
-		patienceMax:       2 * time.Minute,
-		pollIntervalSecs:  2.0,
-		pollJitterSecs:    0.2,
-		stagnantThreshold: 2,
+		patienceMin:      1 * time.Minute,
+		patienceMax:      2 * time.Minute,
+		pollIntervalSecs: 2.0,
+		pollJitterSecs:   0.2,
 	},
 }
 
@@ -72,13 +68,6 @@ type Agent struct {
 	// 50,000 고루틴이 전역 mutex를 공유하면 심각한 경합이 발생하므로
 	// NewAgent()에서 고유 시드로 초기화합니다.
 	rng *rand.Rand
-
-	// --- 스트레스 가중 모드 (PanicMode) ---
-	// 순번이 StagnantThreshold 회 연속 줄지 않으면 폴링 간격을 100~300ms로 단축해
-	// 실제보다 공격적인 상한선 시나리오를 재현한다.
-	StagnantCount     int
-	StagnantThreshold int
-	PanicMode         bool
 
 	// --- 시뮬레이션 대상 (에이전트마다 다를 수 있음) ---
 	// main.go에서 자동 발견 또는 CLI 값으로 주입됩니다.
@@ -151,10 +140,9 @@ func NewAgent(id int, cfg *Config, client *http.Client, sb SessionBlock, counter
 
 		CurrentState: StateIdle,
 
-		PatienceLimit:     patience,
-		BasePollInterval:     time.Duration(params.pollIntervalSecs * float64(time.Second)),
+		PatienceLimit:    patience,
+		BasePollInterval: time.Duration(params.pollIntervalSecs * float64(time.Second)),
 		PollJitter:       params.pollJitterSecs,
-		StagnantThreshold: params.stagnantThreshold,
 
 		rng:       rng,
 		spoofedIP: spoofedIP,
@@ -189,13 +177,6 @@ func (a *Agent) pollInterval() time.Duration {
 	jitter := a.rng.NormFloat64() * a.PollJitter
 	secs := math.Max(minPollInterval.Seconds(), µ+jitter)
 	return time.Duration(secs * float64(time.Second))
-}
-
-// panicThinkTime은 스트레스 가중 모드(PanicMode)의 폴링 간격을 반환합니다.
-// 100~300ms 균등분포로 폴링을 가속해 실제보다 공격적인 부하를 재현합니다.
-func (a *Agent) panicPollInterval() time.Duration {
-	ms := 100 + a.rng.Intn(200)
-	return time.Duration(ms) * time.Millisecond
 }
 
 // hesitateTime은 SeatSelect에서 좌석을 고르는 '망설임' 지연을 반환합니다.

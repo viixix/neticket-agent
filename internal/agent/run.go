@@ -132,17 +132,10 @@ func (a *Agent) doEnterQueue(ctx context.Context) error {
 // doQueueing은 대기 순번을 폴링하며 상태 전이를 결정합니다.
 //
 // 전이 조건:
-//   - position==0 && token != ""   → StateSeatSelect
-//   - PatienceLimit 초과            → StateAborted
-//   - StagnantCount >= Threshold    → PanicMode 진입 (폴링 주기 단축)
+//   - position==0 && token != ""  → StateSeatSelect
+//   - PatienceLimit 초과           → StateAborted
 func (a *Agent) doQueueing(ctx context.Context) {
-	// PanicMode 여부에 따라 대기 간격 결정
-	var wait time.Duration
-	if a.PanicMode {
-		wait = a.panicPollInterval()
-	} else {
-		wait = a.pollInterval()
-	}
+	wait := a.pollInterval()
 
 	select {
 	case <-ctx.Done():
@@ -174,8 +167,6 @@ func (a *Agent) doQueueing(ctx context.Context) {
 	if resp.Token != "" && resp.Position != nil && *resp.Position == 0 {
 		a.activeToken = resp.Token
 		a.QueueLatency = time.Since(a.startTime)
-		a.PanicMode = false
-		a.StagnantCount = 0
 		a.CurrentState = StateSeatSelect
 		if a.shouldLog() {
 			log.Printf("[Agent %d/%s] 대기열 통과 → SeatSelect elapsed=%s",
@@ -184,31 +175,15 @@ func (a *Agent) doQueueing(ctx context.Context) {
 		return
 	}
 
-	// 순서 정체 감지
 	currentPos := 0
 	if resp.Position != nil {
 		currentPos = *resp.Position
 	}
-
-	if currentPos > 0 && currentPos >= a.lastPosition {
-		a.StagnantCount++
-		if !a.PanicMode && a.StagnantCount >= a.StagnantThreshold {
-			a.PanicMode = true
-			if a.shouldLog() {
-				log.Printf("[Agent %d/%s] PanicMode 진입 (pos=%d stagnant=%d)",
-					a.ID, a.PersonalityType, currentPos, a.StagnantCount)
-			}
-		}
-	} else if currentPos > 0 && currentPos < a.lastPosition {
-		// 순서가 줄었으면 정체 카운터 리셋
-		a.StagnantCount = 0
-	}
-
 	a.lastPosition = currentPos
 
 	if a.shouldLog() {
-		log.Printf("[Agent %d/%s] 대기 중 pos=%d panic=%v",
-			a.ID, a.PersonalityType, currentPos, a.PanicMode)
+		log.Printf("[Agent %d/%s] 대기 중 pos=%d",
+			a.ID, a.PersonalityType, currentPos)
 	}
 }
 
