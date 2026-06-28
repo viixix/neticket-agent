@@ -1,6 +1,6 @@
 # neticket-agent
 
-Neticket 티켓팅 시스템의 가상 유저를 대량으로 투입해 대기열·예약 서버의 부하를 시뮬레이션하는 CLI 도구.
+[Neticket](https://github.com/viixix/neticket) 티켓팅 시스템의 가상 유저를 대량으로 투입해 대기열·예약 서버의 부하를 시뮬레이션하는 CLI 도구.
 
 ## 개요
 
