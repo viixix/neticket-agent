@@ -293,6 +293,10 @@ func parseFlags() *agent.Config {
 		"각 에이전트에 랜덤 X-Forwarded-For 헤더 추가 (단일 머신 부하 테스트 시 per-IP rate limit 우회)")
 	flag.DurationVar(&cfg.MaxDuration, "max-duration", cfg.MaxDuration,
 		"테스트 최대 실행 시간 (예: 2m30s). 0이면 무제한. 티켓팅 세션 윈도우 내에서 강제 종료할 때 사용.")
+	flag.BoolVar(&cfg.AdaptivePolling, "adaptive-polling", cfg.AdaptivePolling,
+		"대기 순번에 따라 폴링 주기를 동적으로 조정 (기본값 false — 프론트엔드와 동일한 고정 2s)")
+	flag.IntVar(&cfg.QueueCapacity, "queue-capacity", cfg.QueueCapacity,
+		"서버 active queue 최대 처리 수 (worker.max_capacity). adaptive-polling 구간 계산에 사용.")
 
 	flag.Parse()
 	return cfg

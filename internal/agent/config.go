@@ -45,6 +45,15 @@ type Config struct {
 	// MaxDuration: 0이면 무제한. 양수이면 시작 후 해당 시간이 지나면 ctx를 취소해
 	// 모든 에이전트를 강제 종료합니다. 티켓팅 세션 윈도우를 넘지 않도록 제한할 때 사용합니다.
 	MaxDuration time.Duration
+
+	// AdaptivePolling: true면 대기 순번에 따라 폴링 주기를 동적으로 조정합니다.
+	// false(기본값)면 프론트엔드 refetchInterval(2s)과 동일한 고정 주기를 사용합니다.
+	AdaptivePolling bool
+
+	// QueueCapacity: 서버의 active queue 최대 동시 처리 수 (queue-config의 worker.max_capacity).
+	// AdaptivePolling=true 시 position 구간 threshold 계산에 사용합니다.
+	// 기본값 1000. 서버 설정 변경 시 함께 조정하세요.
+	QueueCapacity int
 }
 
 // DefaultConfig는 neticket.site 운영 환경을 기본값으로 반환합니다.
@@ -58,7 +67,9 @@ func DefaultConfig() *Config {
 		SkipCaptcha:  true,
 		TotalAgents:  50000,
 		LogEvery:     1000,
-		APIURL:        "https://show.neticket.site/api",
-		AutoDiscover: true,
+		APIURL:          "https://show.neticket.site/api",
+		AutoDiscover:    true,
+		AdaptivePolling: false,
+		QueueCapacity:   1000,
 	}
 }

@@ -135,7 +135,12 @@ func (a *Agent) doEnterQueue(ctx context.Context) error {
 //   - position==0 && token != ""  → StateSeatSelect
 //   - PatienceLimit 초과           → StateAborted
 func (a *Agent) doQueueing(ctx context.Context) {
-	wait := a.pollInterval()
+	var wait time.Duration
+	if a.config.AdaptivePolling {
+		wait = a.adaptivePollInterval(a.lastPosition)
+	} else {
+		wait = a.pollInterval()
+	}
 
 	select {
 	case <-ctx.Done():

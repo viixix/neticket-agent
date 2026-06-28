@@ -179,6 +179,34 @@ func (a *Agent) pollInterval() time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
+// adaptivePollInterval은 대기 순번에 따라 폴링 주기를 동적으로 반환합니다.
+//
+// 구간은 서버의 active queue 최대 처리 용량(QueueCapacity, 기본 1000)을 기준으로
+// position / QueueCapacity 비율로 결정합니다.
+// 근거: active_ttl 60s 기준 처리율(QueueCapacity/60 명/초)에서 역산한 예상 대기 시간.
+//
+//	position > 5×cap → 10s  (입장까지 5분 이상)
+//	position > 1×cap →  5s  (입장까지 1분 이상)
+//	position > cap/10 →  2s  (프론트엔드 refetchInterval 기준)
+//	position ≤ cap/10 →  1s  (입장 직전, 응답성 최대화)
+func (a *Agent) adaptivePollInterval(position int) time.Duration {
+	cap := a.config.QueueCapacity
+	var baseSecs float64
+	switch {
+	case position > 5*cap:
+		baseSecs = 10.0
+	case position > cap:
+		baseSecs = 5.0
+	case position > cap/10:
+		baseSecs = 2.0
+	default:
+		baseSecs = 1.0
+	}
+	jitter := a.rng.NormFloat64() * a.PollJitter
+	secs := math.Max(minPollInterval.Seconds(), baseSecs+jitter)
+	return time.Duration(secs * float64(time.Second))
+}
+
 // hesitateTime은 SeatSelect에서 좌석을 고르는 '망설임' 지연을 반환합니다.
 // 0.5s~1.5s 균등분포.
 func (a *Agent) hesitateTime() time.Duration {

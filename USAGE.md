@@ -35,6 +35,8 @@ go build -o agent ./cmd/agent
 | `--block-id` | `0` | 수동 지정 시 구역 ID (`--auto-discover=false`와 함께) |
 | `--skip-captcha` | `true` | 캡차 단계 스킵 (서버 bypass 설정 필요) |
 | `--log-every` | `1000` | 로그 샘플링 간격 (ID % N == 0인 에이전트만 출력) |
+| `--adaptive-polling` | `false` | 대기 순번 기반 adaptive polling 활성화 |
+| `--queue-capacity` | `1000` | 서버 `worker.max_capacity` 값 (adaptive polling 구간 계산용) |
 
 ## 세션/블록 지정 방식
 
@@ -63,7 +65,8 @@ go build -o agent ./cmd/agent
 | Doubtful | 33% | 2~3분 | 희망을 잃고 중반 이전에 이탈 |
 | Hopeless | 34% | 1~2분 | 초반 폴링 몇 회 안에 포기하고 이탈 |
 
-프론트엔드 `refetchInterval`(2s)과 동일한 고정 주기로 폴링한다.
+기본값(`--adaptive-polling=false`)은 프론트엔드 `refetchInterval`(2s)과 동일한 고정 주기로 폴링한다.  
+`--adaptive-polling` 활성화 시 대기 순번에 따라 주기를 동적으로 조정해 서버 부하를 절감한다.
 
 ## 시스템 요건 (대규모 테스트)
 
