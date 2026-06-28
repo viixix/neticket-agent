@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -74,14 +75,34 @@ func main() {
 	var (
 		countDone    atomic.Int64
 		countAborted atomic.Int64
+
+		// 페르소나별 카운터 [Hopeful=0, Doubtful=1, Hopeless=2]
+		doneByPersona    [3]atomic.Int64
+		abortedByPersona [3]atomic.Int64
 	)
 
+	// HTTP 에러 공유 카운터
+	counters := &agent.SharedCounters{}
+
+	// E2E latency (대기열 진입 → 통과) 수집
+	latencyCh := make(chan time.Duration, 10000)
+	var (
+		latencyMu sync.Mutex
+		latencies  []float64
+	)
+	go func() {
+		for d := range latencyCh {
+			latencyMu.Lock()
+			latencies = append(latencies, d.Seconds())
+			latencyMu.Unlock()
+		}
+	}()
+
 	// ----------------------------------------------------------------
-	// 6. 에이전트 풀 생성 및 Staggered Start
+	// 6. 에이전트 풀 생성 및 Ramp-up
 	//
-	//    실제 티켓팅 트래픽은 일시에 폭발하지 않고 짧은 시간에 걸쳐
-	//    유입됩니다. 에이전트를 배치(batch)로 나눠 시작하여 더 현실적인
-	//    트래픽 파형을 만듭니다.
+	//    에이전트를 배치(batch)로 나눠 시작하여 부하를 점진적으로 증가시킵니다.
+	//    (k6 stages / JMeter ramp-up period 와 동일한 개념)
 	//
 	//    batchSize = 500: 500명씩 묶어서 시작
 	//    batchDelay = 100ms: 배치 간 간격 → 50,000명 전체 시작에 10초 소요
@@ -135,18 +156,23 @@ func main() {
 		if len(sessionBlocks) > 0 {
 			sb = sessionBlocks[i%len(sessionBlocks)]
 		}
-		a := agent.NewAgent(i, cfg, client, sb)
+		a := agent.NewAgent(i, cfg, client, sb, counters)
 
 		go func(a *agent.Agent) {
 			defer wg.Done()
 			a.Run(ctx)
 
-			// 결과 집계
+			p := int(a.PersonalityType)
 			switch a.CurrentState {
 			case agent.StateDone:
 				countDone.Add(1)
+				doneByPersona[p].Add(1)
+				if a.QueueLatency > 0 {
+					latencyCh <- a.QueueLatency
+				}
 			default:
 				countAborted.Add(1)
+				abortedByPersona[p].Add(1)
 			}
 		}(a)
 	}
@@ -168,8 +194,24 @@ waitAll:
 				done := countDone.Load()
 				aborted := countAborted.Load()
 				total := int64(cfg.TotalAgents)
-				log.Printf("[진행] Done=%d Aborted=%d Running=%d / Total=%d",
-					done, aborted, total-done-aborted, total)
+
+				latencyMu.Lock()
+				cp := make([]float64, len(latencies))
+				copy(cp, latencies)
+				latencyMu.Unlock()
+
+				slices.Sort(cp)
+				p50, p95 := percentile(cp, 0.5), percentile(cp, 0.95)
+
+				log.Printf("[진행] Done=%d(H=%d D=%d HL=%d) Aborted=%d(H=%d D=%d HL=%d) Running=%d / Total=%d | queue p50=%.1fs p95=%.1fs | 500=%d 502=%d 503=%d net=%d",
+					done,
+					doneByPersona[0].Load(), doneByPersona[1].Load(), doneByPersona[2].Load(),
+					aborted,
+					abortedByPersona[0].Load(), abortedByPersona[1].Load(), abortedByPersona[2].Load(),
+					total-done-aborted, total,
+					p50, p95,
+					counters.Err500.Load(), counters.Err502.Load(), counters.Err503.Load(), counters.ErrNet.Load(),
+				)
 			}
 		}
 	}()
@@ -179,9 +221,47 @@ waitAll:
 	// ----------------------------------------------------------------
 	wg.Wait()
 
+	close(latencyCh)
+
 	elapsed := time.Since(startedAt).Round(time.Second)
-	log.Printf("[main] 시뮬레이션 완료 elapsed=%s Done=%d Aborted=%d",
-		elapsed, countDone.Load(), countAborted.Load())
+	done := countDone.Load()
+	aborted := countAborted.Load()
+
+	latencyMu.Lock()
+	cp := make([]float64, len(latencies))
+	copy(cp, latencies)
+	latencyMu.Unlock()
+
+	slices.Sort(cp)
+
+	log.Printf("[main] 시뮬레이션 완료 elapsed=%s", elapsed)
+	log.Printf("[결과] Done=%d / Aborted=%d / Total=%d",
+		done, aborted, int64(cfg.TotalAgents))
+	log.Printf("[페르소나] Hopeful Done=%d Aborted=%d | Doubtful Done=%d Aborted=%d | Hopeless Done=%d Aborted=%d",
+		doneByPersona[0].Load(), abortedByPersona[0].Load(),
+		doneByPersona[1].Load(), abortedByPersona[1].Load(),
+		doneByPersona[2].Load(), abortedByPersona[2].Load(),
+	)
+	log.Printf("[대기열 latency] 샘플=%d p50=%.1fs p95=%.1fs p99=%.1fs",
+		len(cp),
+		percentile(cp, 0.5),
+		percentile(cp, 0.95),
+		percentile(cp, 0.99),
+	)
+	log.Printf("[HTTP 에러] 500=%d 502=%d 503=%d net=%d",
+		counters.Err500.Load(), counters.Err502.Load(),
+		counters.Err503.Load(), counters.ErrNet.Load(),
+	)
+}
+
+// percentile은 정렬된 슬라이스에서 p번째 백분위수를 반환합니다 (p: 0.0~1.0).
+// 슬라이스가 비어 있으면 0을 반환합니다.
+func percentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	idx := int(float64(len(sorted)-1) * p)
+	return sorted[idx]
 }
 
 // ----------------------------------------------------------------
