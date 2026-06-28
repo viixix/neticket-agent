@@ -33,26 +33,31 @@ func (s State) String() string {
 	}
 }
 
-// PersonalityType은 Yu et al. / Maister 연구 기반의 유저 행동 유형입니다.
+// PersonalityType은 티켓팅 대기 중 유저의 이탈 성향을 나타냅니다.
+//
+// 근거: NOL티켓·멜론티켓·티켓링크·예스24 등 실제 서비스의 좌석 선점 후
+// 결제 제한 시간이 약 5~10분입니다. 유저는 이 시간 내에 선점 포기로
+// 풀리는 좌석을 기대하며 대기하므로, Hopeful의 상한을 5분으로 설정하고
+// 이탈 성향에 따라 나머지 두 구간을 상대적으로 조정했습니다.
 type PersonalityType int
 
 const (
-	// PersonalityStandard: 평균적인 유저. PatienceLimit 3~5분, StagnantThreshold 3.
-	PersonalityStandard PersonalityType = iota
-	// PersonalityUrgent: 조급한 유저. PatienceLimit 2~3분, BaseThinkTime 짧음.
-	PersonalityUrgent
-	// PersonalityQuitter: 쉽게 포기하는 유저. PatienceLimit 1~2분, StagnantThreshold 2.
-	PersonalityQuitter
+	// PersonalityHopeful: 결제 제한 시간(~5분)까지 희망을 갖고 대기. PatienceLimit 3~5분.
+	PersonalityHopeful PersonalityType = iota
+	// PersonalityDoubtful: 중반 이전에 희망을 잃고 이탈. PatienceLimit 2~3분.
+	PersonalityDoubtful
+	// PersonalityHopeless: 초반 폴링 몇 회 안에 포기. PatienceLimit 1~2분.
+	PersonalityHopeless
 )
 
 func (p PersonalityType) String() string {
 	switch p {
-	case PersonalityStandard:
-		return "Standard"
-	case PersonalityUrgent:
-		return "Urgent"
-	case PersonalityQuitter:
-		return "Quitter"
+	case PersonalityHopeful:
+		return "Hopeful"
+	case PersonalityDoubtful:
+		return "Doubtful"
+	case PersonalityHopeless:
+		return "Hopeless"
 	default:
 		return fmt.Sprintf("Unknown(%d)", int(p))
 	}

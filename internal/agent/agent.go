@@ -10,38 +10,36 @@ import (
 
 // -----------------------------------------------------------------------
 // 페르소나별 파라미터 상수
-// Yu et al. "Delay Information in Virtual Queues" 기반 PatienceLimit,
-// Flash Crowd Attacks 연구 기반 Gaussian Jitter (μ, σ).
 // -----------------------------------------------------------------------
 
 type personalityParams struct {
 	patienceMin       time.Duration
 	patienceMax       time.Duration
-	thinkMeanSecs     float64 // μ (초)
-	thinkStddevSecs   float64 // σ (초)
-	stagnantThreshold int     // Maister: 이 횟수만큼 순서 변화 없으면 PanicMode
+	pollIntervalSecs  float64 // 폴링 주기 μ (초) — 프론트엔드 refetchInterval 2s 기준
+	pollJitterSecs    float64 // 폴링 주기 σ (초)
+	stagnantThreshold int     // 이 횟수만큼 순서 변화 없으면 PanicMode
 }
 
 var personalityTable = map[PersonalityType]personalityParams{
-	PersonalityStandard: {
+	PersonalityHopeful: {
 		patienceMin:       3 * time.Minute,
 		patienceMax:       5 * time.Minute,
-		thinkMeanSecs:     1.6,
-		thinkStddevSecs:   0.4,
+		pollIntervalSecs:  2.0,
+		pollJitterSecs:    0.2,
 		stagnantThreshold: 3,
 	},
-	PersonalityUrgent: {
+	PersonalityDoubtful: {
 		patienceMin:       2 * time.Minute,
 		patienceMax:       3 * time.Minute,
-		thinkMeanSecs:     1.0,
-		thinkStddevSecs:   0.3,
+		pollIntervalSecs:  2.0,
+		pollJitterSecs:    0.2,
 		stagnantThreshold: 3,
 	},
-	PersonalityQuitter: {
+	PersonalityHopeless: {
 		patienceMin:       1 * time.Minute,
 		patienceMax:       2 * time.Minute,
-		thinkMeanSecs:     1.6,
-		thinkStddevSecs:   0.4,
+		pollIntervalSecs:  2.0,
+		pollJitterSecs:    0.2,
 		stagnantThreshold: 2,
 	},
 }
@@ -62,15 +60,13 @@ type Agent struct {
 	// --- 상태 머신 ---
 	CurrentState State
 
-	// --- Yu et al.: PatienceLimit 모델 ---
 	// 대기 시작 시각과 인내심 한계. 초과 시 Aborted로 전이.
 	PatienceLimit time.Duration
 	startTime     time.Time
 
-	// --- Flash Crowd Attacks: Gaussian Jitter ---
-	// μ + σ*N(0,1) 으로 ThinkTime을 계산.
-	BaseThinkTime time.Duration // μ
-	JitterRange   float64       // σ (초 단위)
+	// μ + σ*N(0,1) 으로 폴링 주기를 계산. 프론트엔드 refetchInterval(2s) 기준.
+	BasePollInterval time.Duration // μ
+	PollJitter       float64       // σ (초 단위)
 
 	// [Lock Contention 방지] 전역 rand 대신 에이전트별 독립 인스턴스.
 	// 50,000 고루틴이 전역 mutex를 공유하면 심각한 경합이 발생하므로
@@ -78,10 +74,8 @@ type Agent struct {
 	rng *rand.Rand
 
 	// --- 스트레스 가중 모드 (PanicMode) ---
-	// 실제 클라이언트는 고정 주기로 폴링하지만, 순번이 StagnantThreshold 회
-	// 연속 줄지 않으면 폴링 간격을 100~300ms로 단축해 부하를 가중시킨다.
-	// Maister의 대기 심리학(불안 시 이탈 증가)을 정확히 모델링한 것이 아니라,
-	// 실제보다 공격적인 상한선 시나리오를 재현하기 위한 의도적 스트레스 배수기다.
+	// 순번이 StagnantThreshold 회 연속 줄지 않으면 폴링 간격을 100~300ms로 단축해
+	// 실제보다 공격적인 상한선 시나리오를 재현한다.
 	StagnantCount     int
 	StagnantThreshold int
 	PanicMode         bool
@@ -98,6 +92,12 @@ type Agent struct {
 	conflictRetries int       // 이선좌(Conflict) 발생 시 재시도 횟수 (최대 3)
 	selectedSeat    seatCoord // doSeatSelect → doReserve 로 선택 좌석 전달
 	spoofedIP       string    // X-Forwarded-For 위조 IP (SpoofIP=true 시 사용)
+
+	// --- 측정값 (고루틴 종료 후 main에서 집계) ---
+	QueueLatency time.Duration // 대기열 진입 → 통과(position=0)까지 소요 시간
+
+	// --- 공유 카운터 (모든 에이전트가 동일 인스턴스를 가리킴) ---
+	counters *SharedCounters
 }
 
 // -----------------------------------------------------------------------
@@ -109,7 +109,7 @@ type Agent struct {
 // sharedTransport는 pkg/util.NewTransport()로 만든 단일 인스턴스를 전달하고,
 // CookieJar는 내부에서 에이전트 전용으로 생성합니다.
 // sb.SessionID/BlockID 가 0이면 Config 기본값을 사용합니다.
-func NewAgent(id int, cfg *Config, client *http.Client, sb SessionBlock) *Agent {
+func NewAgent(id int, cfg *Config, client *http.Client, sb SessionBlock, counters *SharedCounters) *Agent {
 	// 전역 rand와 독립된 시드: 나노초 XOR ID로 고루틴 간 시드 중복 방지.
 	seed := time.Now().UnixNano() ^ int64(id)
 	rng := rand.New(rand.NewSource(seed)) //nolint:gosec // 보안 목적이 아닌 시뮬레이션용
@@ -152,26 +152,27 @@ func NewAgent(id int, cfg *Config, client *http.Client, sb SessionBlock) *Agent 
 		CurrentState: StateIdle,
 
 		PatienceLimit:     patience,
-		BaseThinkTime:     time.Duration(params.thinkMeanSecs * float64(time.Second)),
-		JitterRange:       params.thinkStddevSecs,
+		BasePollInterval:     time.Duration(params.pollIntervalSecs * float64(time.Second)),
+		PollJitter:       params.pollJitterSecs,
 		StagnantThreshold: params.stagnantThreshold,
 
 		rng:       rng,
 		spoofedIP: spoofedIP,
+		counters:  counters,
 	}
 }
 
-// pickPersonality는 Standard 33% / Urgent 33% / Quitter 34% 비율로
+// pickPersonality는 Hopeful 33% / Doubtful 33% / Hopeless 34% 비율로
 // 페르소나를 선택합니다.
 func pickPersonality(rng *rand.Rand) PersonalityType {
 	n := rng.Intn(100)
 	switch {
 	case n < 33:
-		return PersonalityStandard
+		return PersonalityHopeful
 	case n < 66:
-		return PersonalityUrgent
+		return PersonalityDoubtful
 	default:
-		return PersonalityQuitter
+		return PersonalityHopeless
 	}
 }
 
@@ -179,20 +180,20 @@ func pickPersonality(rng *rand.Rand) PersonalityType {
 // ThinkTime 계산 헬퍼
 // -----------------------------------------------------------------------
 
-const minThinkTime = 50 * time.Millisecond
+const minPollInterval = 50 * time.Millisecond
 
-// thinkTime은 Flash Crowd 연구 기반 Gaussian 분포로 대기 시간을 계산합니다.
+// thinkTime은 Gaussian 분포로 폴링 간격을 계산합니다.
 // 하한을 50ms로 클램핑하여 음수·0 값을 방지합니다.
-func (a *Agent) thinkTime() time.Duration {
-	µ := a.BaseThinkTime.Seconds()
-	jitter := a.rng.NormFloat64() * a.JitterRange
-	secs := math.Max(minThinkTime.Seconds(), µ+jitter)
+func (a *Agent) pollInterval() time.Duration {
+	µ := a.BasePollInterval.Seconds()
+	jitter := a.rng.NormFloat64() * a.PollJitter
+	secs := math.Max(minPollInterval.Seconds(), µ+jitter)
 	return time.Duration(secs * float64(time.Second))
 }
 
 // panicThinkTime은 스트레스 가중 모드(PanicMode)의 폴링 간격을 반환합니다.
 // 100~300ms 균등분포로 폴링을 가속해 실제보다 공격적인 부하를 재현합니다.
-func (a *Agent) panicThinkTime() time.Duration {
+func (a *Agent) panicPollInterval() time.Duration {
 	ms := 100 + a.rng.Intn(200)
 	return time.Duration(ms) * time.Millisecond
 }

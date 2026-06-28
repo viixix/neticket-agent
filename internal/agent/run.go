@@ -139,9 +139,9 @@ func (a *Agent) doQueueing(ctx context.Context) {
 	// PanicMode 여부에 따라 대기 간격 결정
 	var wait time.Duration
 	if a.PanicMode {
-		wait = a.panicThinkTime()
+		wait = a.panicPollInterval()
 	} else {
-		wait = a.thinkTime()
+		wait = a.pollInterval()
 	}
 
 	select {
@@ -173,16 +173,18 @@ func (a *Agent) doQueueing(ctx context.Context) {
 	// 대기열 통과: position 0 + JWT 발급
 	if resp.Token != "" && resp.Position != nil && *resp.Position == 0 {
 		a.activeToken = resp.Token
+		a.QueueLatency = time.Since(a.startTime)
 		a.PanicMode = false
 		a.StagnantCount = 0
 		a.CurrentState = StateSeatSelect
 		if a.shouldLog() {
-			log.Printf("[Agent %d/%s] 대기열 통과 → SeatSelect", a.ID, a.PersonalityType)
+			log.Printf("[Agent %d/%s] 대기열 통과 → SeatSelect elapsed=%s",
+				a.ID, a.PersonalityType, a.QueueLatency.Round(time.Millisecond))
 		}
 		return
 	}
 
-	// 순서 정체 감지 (Maister 대기열 심리학)
+	// 순서 정체 감지
 	currentPos := 0
 	if resp.Position != nil {
 		currentPos = *resp.Position
@@ -248,7 +250,7 @@ func (a *Agent) doSeatSelect(ctx context.Context) {
 		return
 	}
 
-	// 망설임 지연 (Maister: 선택 불안)
+	// 망설임 지연 (실제 유저의 좌석 선택 시간 모사)
 	select {
 	case <-ctx.Done():
 		a.CurrentState = StateAborted
@@ -397,7 +399,17 @@ func (a *Agent) doJSON(
 
 	resp, err := a.client.Do(req)
 	if err != nil {
+		a.counters.ErrNet.Add(1)
 		return 0, err
+	}
+
+	switch resp.StatusCode {
+	case 500:
+		a.counters.Err500.Add(1)
+	case 502:
+		a.counters.Err502.Add(1)
+	case 503:
+		a.counters.Err503.Add(1)
 	}
 	defer func() {
 		// 잔여 바이트를 반드시 소진 후 닫아야 커넥션이 풀로 반환됩니다.
